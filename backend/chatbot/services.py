@@ -1,40 +1,115 @@
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer, M2M100ForConditionalGeneration, M2M100Tokenizer
 from django.utils.timezone import now, timedelta
 from database.chatbot_models import ChatSession, ChatMessage
 from database.user_models import Customer
+from database.product_models import Product, UserPreference
+from .models import ai_model_manager
+from rapidfuzz.fuzz import ratio
+from fuzzywuzzy import process
+import re
 
-def load_models():
-    dialog_model_name = "microsoft/DialoGPT-medium"
-    translation_model_name = "facebook/m2m100_418M"
 
-    dialog_tokenizer = AutoTokenizer.from_pretrained(dialog_model_name)
-    if dialog_tokenizer.pad_token is None:
-        dialog_tokenizer.pad_token = dialog_tokenizer.eos_token
-        dialog_tokenizer.pad_token_id = dialog_tokenizer.eos_token_id
-    dialog_model = AutoModelForCausalLM.from_pretrained(dialog_model_name)
 
-    translation_tokenizer = M2M100Tokenizer.from_pretrained(translation_model_name)
-    translation_model = M2M100ForConditionalGeneration.from_pretrained(translation_model_name)
+def handle_chat_message(user, text):
+    session = get_or_create_chat_session(user)
+    ChatMessage.objects.create(session=session, sender="user", text=text)
 
-    return dialog_tokenizer, dialog_model, translation_tokenizer, translation_model
+    intent = ai_model_manager.detect_intent(text)
+    intent = intent.strip().strip('"')
 
-dialog_tokenizer, dialog_model, translation_tokenizer, translation_model = load_models()
+    response = 'Hola'
+    
+    if intent == "desconocido":
+        response = "No estoy seguro de entender. ¿Podrías reformular tu pregunta?"
+    if intent == "saludo":
+        response = "¡Hola! Soy tu asistente de Buy n Large. ¿En qué puedo ayudarte?"
+    if intent == "despedida":
+        response = "¡Gracias por contactarnos! No dudes en escribirme si necesitas más ayuda."
+        ChatMessage.objects.create(session=session, sender="chatbot", text=response)
+        session.delete()
+        return None, response
+    if intent in ["consulta_precio", "consulta_inventario", "caracteristicas_producto"]:
+        if ":" not in text:
+            return session.id, "Por favor, escribe tu consulta de esta forma: '¿Cuánto cuesta: [nombre del producto]?' o '¿Cuál es el stock de: [nombre del producto]?'"
+        product_part = text.split(":", 1)[1].strip()  
+        product_entities = ai_model_manager.extract_product_entities(product_part)
+        product_names = [entity['word'] for entity in product_entities] if product_entities else []
+        
+        if product_names:
+            main_product = product_names[0]
+        else:
+            raw_product_name = text.split(":")[-1].strip()
+            clean_name = clean_product_name(raw_product_name)
+            main_product = find_best_match(clean_name)
 
-def translate_text(text, src_lang, tgt_lang):
-    translation_tokenizer.src_lang = src_lang
-    inputs = translation_tokenizer(text, return_tensors="pt")
-    output_tokens = translation_model.generate(**inputs, forced_bos_token_id=translation_tokenizer.get_lang_id(tgt_lang))
-    return translation_tokenizer.batch_decode(output_tokens, skip_special_tokens=True)[0]
+        if main_product is None:
+            return session.id, f"No encontramos '{product_part}' en el inventario. ¿Puedes verificar el nombre?"
+        response = handle_product_query(intent, main_product)
 
-def get_chatbot_response(input_text, chat_history=None):
-    input_text_en = translate_text(input_text, "es", "en")
-    input_ids = dialog_tokenizer.encode(input_text_en + dialog_tokenizer.eos_token, return_tensors="pt")
-    attention_mask = input_ids.ne(dialog_tokenizer.pad_token_id).long()
-    response_ids = dialog_model.generate(input_ids, attention_mask=attention_mask, max_length=100, pad_token_id=dialog_tokenizer.eos_token_id)
-    response_text_en = dialog_tokenizer.decode(response_ids[:, input_ids.shape[-1]:][0], skip_special_tokens=True)
-    response_text_es = translate_text(response_text_en, "en", "es")
-    return response_text_es
+    if intent == "consulta_recomendaciones":
+        response = handle_recommendations(user)
+    
+    
+
+    ChatMessage.objects.create(session=session, sender="chatbot", text=response)
+    session.last_active = now()
+    session.save()
+    return session.id, response
+
+def get_all_product_names():
+    return list(Product.objects.values_list("name", flat=True))
+
+def clean_product_name(name):
+    return re.sub(r"[^\w\s]", "", name).strip().lower()
+
+def find_best_match(product_name):
+    productos_db = get_all_product_names()
+    best_match, score = process.extractOne(product_name, productos_db) if productos_db else (None, 0)
+
+    if best_match and score >= 95:  
+        return best_match  
+    return None
+
+def handle_product_query(intent, product_name):
+    print(f"[DEBUG] Producto recibido en handle_product_query: {product_name}")
+    
+    product = Product.objects.filter(name=product_name).first()
+    
+    if not product:
+        print(f"[DEBUG] Producto '{product_name}' no encontrado en la base de datos.")
+        return f"Lo siento, pero no encontramos '{product_name}' en nuestro inventario."
+    
+    if intent == "consulta_precio":
+        return f"El precio de {product.name} es ${product.price}"
+    
+    elif intent == "consulta_inventario":
+        return f"{product.name}: Stock: {product.stock} unidades"
+    
+    elif intent == "caracteristicas_producto":
+        return f"Características de {product.name}: {product.specifications}"
+    
+    return "No pude procesar tu consulta, intenta reformularla."
+
+
+
+
+def handle_recommendations(user):
+    if not user:
+        return "⚠️ Para recomendaciones personalizadas, por favor inicia sesión."
+    
+    try:
+        prefs = UserPreference.objects.get(user=user)
+        products = Product.objects.filter(
+            category__in=prefs.preferred_categories.all(),
+            brand__in=prefs.preferred_brands.all(),
+            price__range=(prefs.budget_range.get('min', 0), prefs.budget_range.get('max', 99999))
+        )[:5]  # Limitar a 5 recomendaciones
+        
+        return "🎁 Recomendaciones personalizadas:\n" + "\n".join(
+            f"- {p.name} (${p.price})" for p in products
+        ) if products.exists() else "¿Qué tipo de productos te interesan hoy?"
+    
+    except UserPreference.DoesNotExist:
+        return "Cuéntame tus preferencias para darte mejores recomendaciones."
 
 def get_or_create_chat_session(user=None):
     if user:
@@ -46,22 +121,7 @@ def get_or_create_chat_session(user=None):
         session = ChatSession.objects.create(user=None)
     return session
 
-def handle_chat_message(user, text):
-    session = get_or_create_chat_session(user)
-    ChatMessage.objects.create(session=session, sender="user", text=text)
-    if text.strip().lower() == "salir":
-        farewell_message = "¡Hasta luego! Si necesitas algo más, no dudes en escribirme."
-        ChatMessage.objects.create(session=session, sender="chatbot", text=farewell_message)
-        session.delete()
-        return None, farewell_message
-    bot_response = get_chatbot_response(text)
-    ChatMessage.objects.create(session=session, sender="chatbot", text=bot_response)
-    session.last_active = now()
-    session.save()
-    return session.id, bot_response
-
 def clean_expired_sessions():
-    # Function to clean expired chat sessions
     for session in ChatSession.objects.all():
         if session.is_expired():
             session.delete()

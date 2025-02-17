@@ -1,5 +1,16 @@
 from rest_framework import serializers
 from ..models import Product, UserPreference, Brand, Category, Customer, ChatSession, ChatMessage
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+
+class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
+    @classmethod
+    def get_token(cls, user):
+        token = super().get_token(user)
+
+        token['email'] = user.email
+        if hasattr(user, 'role'):
+            token['role'] = user.role
+        return token
 
 class BrandSerializer(serializers.ModelSerializer):
     class Meta:

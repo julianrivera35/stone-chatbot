@@ -1,0 +1,90 @@
+.box {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    border: 2px solid blueviolet;
+    border-radius: 25px;
+    background-color: antiquewhite;
+    justify-content: center;
+    align-items: center;
+    width: 300px;
+    height: 400px;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    padding: 10px;
+}
+
+.title {
+    font-weight: bold;
+    color: blueviolet;
+    text-align: center;
+    margin-bottom: 10px;
+}
+
+.inner-box {
+    justify-content: center;
+    align-items: center;
+    overflow-y: auto;
+    flex-grow: 1;
+    width: 100%;
+    padding: 10px;
+}
+
+.form {
+    width: calc(100% - 20px);
+    margin: 10px 0;
+}
+
+.sent-button {
+    color: black;
+    background-color: cadetblue;
+    font-weight: bold;
+    font-size: medium;
+    border-radius: 30px;
+    padding: 10px 30px;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 10px;
+}
+
+.chat-toggle-button {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background-color: blueviolet;
+    color: white;
+    border: none;
+    border-radius: 15px;
+    padding: 10px 20px;
+    font-size: medium;
+    cursor: pointer;
+    z-index: 1001;
+}
+
+.chat-toggle-button:hover {
+    background-color: rebeccapurple;
+}
+
+.close-button {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background-color: transparent;
+    color: blueviolet;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+}
+
+.close-button:hover {
+    color: rebeccapurple;
+}
+
+.message {
+    margin-bottom: 10px;
+    padding: 5px 10px;
+    background-color: #f0f0f0;
+    border-radius: 10px;
+    text-align: left;
+}

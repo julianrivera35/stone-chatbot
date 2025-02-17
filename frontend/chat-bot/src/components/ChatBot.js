@@ -25,10 +25,18 @@ const Chatbot = () => {
 
         if (data && data.response_text) {
           let responseMessage;
+
           if (typeof data.response_text === 'string') {
             responseMessage = {
               id: messages.length + 1,
               text: data.response_text
+            };
+          } else if (Array.isArray(data.response_text)) {
+            responseMessage = {
+              id: messages.length + 1,
+              text: data.response_text.map(item => (
+                `Producto: ${item.name}, Precio: ${item.price}`
+              )).join('\n')
             };
           } else if (data.response_text.products && Array.isArray(data.response_text.products)) {
             responseMessage = {

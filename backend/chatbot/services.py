@@ -6,6 +6,8 @@ from .models import ai_model_manager
 from rapidfuzz.fuzz import ratio
 from fuzzywuzzy import process
 import re
+from .utils import extract_query_info
+from django.db.models import F
 
 
 
@@ -15,8 +17,8 @@ def handle_chat_message(user, text):
 
     intent = ai_model_manager.detect_intent(text)
     intent = intent.strip().strip('"')
-
-    response = 'Hola'
+    print('INTENT: ', intent)
+    response = "No estoy seguro de entender. ¿Podrías reformular tu pregunta?"
     
     if intent == "desconocido":
         response = "No estoy seguro de entender. ¿Podrías reformular tu pregunta?"
@@ -44,6 +46,10 @@ def handle_chat_message(user, text):
         if main_product is None:
             return session.id, f"No encontramos '{product_part}' en el inventario. ¿Puedes verificar el nombre?"
         response = handle_product_query(intent, main_product)
+    
+    elif intent in ["consulta_categoria", "consulta_marca", "consulta_mixta", "consulta_multiproducto"]:
+        response = handle_product_query(intent, text)
+
 
     if intent == "consulta_recomendaciones":
         response = handle_recommendations(user)
@@ -65,36 +71,118 @@ def find_best_match(product_name):
     productos_db = get_all_product_names()
     best_match, score = process.extractOne(product_name, productos_db) if productos_db else (None, 0)
 
-    if best_match and score >= 95:  
+    if best_match and score >= 75:  
         return best_match  
     return None
 
-def handle_product_query(intent, product_name):
-    print(f"[DEBUG] Producto recibido en handle_product_query: {product_name}")
+def handle_product_query(intent, input_text):
+    """Procesa la consulta según la intención detectada y filtra productos en la BD."""
     
-    product = Product.objects.filter(name=product_name).first()
-    
-    if not product:
-        print(f"[DEBUG] Producto '{product_name}' no encontrado en la base de datos.")
-        return f"Lo siento, pero no encontramos '{product_name}' en nuestro inventario."
-    
-    if intent == "consulta_precio":
-        return f"El precio de {product.name} es ${product.price}"
-    
-    elif intent == "consulta_inventario":
-        return f"{product.name}: Stock: {product.stock} unidades"
-    
-    elif intent == "caracteristicas_producto":
-        return f"Características de {product.name}: {product.specifications}"
-    
-    return "No pude procesar tu consulta, intenta reformularla."
+    if intent in ["consulta_precio", "consulta_inventario", "caracteristicas_producto"]:
+        product_ids = extract_query_info(input_text, intent)
+        print(f"Debug - Input text: {input_text}")
+        print(f"Debug - Product IDs found: {product_ids}")
+        
+        if not product_ids or len(product_ids) == 0:
+            return {"error": "No se encontró el producto especificado."}
+            
+        product = Product.objects.filter(id=product_ids[0]).select_related('brand', 'category').first()
+        if not product:
+            return {"error": "No se encontró el producto especificado."}
+            
+        if intent == "consulta_precio":
+            return {
+                "message": f"El precio de {product.name} es ${product.price}",
+                "product": {
+                    "id": product.id,
+                    "name": product.name,
+                    "price": product.price,
+                    "brand_name": product.brand.name,
+                    "category_name": product.category.name
+                }
+            }
+        
+        elif intent == "consulta_inventario":
+            return {
+                "message": f"{product.name}: Stock: {product.stock} unidades",
+                "product": {
+                    "id": product.id,
+                    "name": product.name,
+                    "stock": product.stock,
+                    "brand_name": product.brand.name,
+                    "category_name": product.category.name
+                }
+            }
+        
+        elif intent == "caracteristicas_producto":
+            return {
+                "message": f"Características de {product.name}:",
+                "product": {
+                    "id": product.id,
+                    "name": product.name,
+                    "specifications": product.specifications,
+                    "description": product.description,
+                    "brand_name": product.brand.name,
+                    "category_name": product.category.name
+                }
+            }
 
+    elif intent == "consulta_categoria":
+        category = extract_query_info(input_text, intent)
+        if category:
+            products = Product.objects.filter(category__name__iexact=category)
+            return {"category": category, "products": list(products.values())}
+        return {"error": "No se encontraron productos para esa categoría."}
 
+    elif intent == "consulta_marca":
+        brand = extract_query_info(input_text, intent)
+        if brand:
+            products = Product.objects.filter(brand__name__iexact=brand)
+            return {"brand": brand, "products": list(products.values())}
+        return {"error": "No se encontraron productos para esa marca."}
+
+    elif intent == "consulta_mixta":
+        category, brand = extract_query_info(input_text, intent) or (None, None)
+
+        if category is None and brand is None:
+            return {"error": "No se encontraron productos con esos nombres."}
+
+        if brand and not category:
+            products = Product.objects.filter(brand__name__iexact=brand)
+        elif category and not brand:
+            products = Product.objects.filter(category__name__iexact=category)
+        else:
+            products = Product.objects.filter(brand__name__iexact=brand, category__name__iexact=category)
+        
+        if not products.exists():
+            return {"error": "No se encontraron productos disponibles en esa categoría o marca."}
+
+        return list(products.values("name", "price"))
+
+    elif intent == "consulta_multiproducto":
+        product_ids = extract_query_info(input_text, intent)
+        print(f"Product IDs received: {product_ids}")
+        
+        if product_ids:
+            products = Product.objects.filter(id__in=product_ids).select_related('brand', 'category')
+            return {
+                "products": list(products.values(
+                    "id", 
+                    "name", 
+                    "price",
+                    "description",
+                    brand_name=F('brand__name'),
+                    category_name=F('category__name')
+                ))
+            }
+        return {"error": "No se encontraron productos con esos nombres."}
+
+    return {"error": "No se pudo procesar la consulta."}
 
 
 def handle_recommendations(user):
     if not user:
-        return "⚠️ Para recomendaciones personalizadas, por favor inicia sesión."
+        return "Para recomendaciones personalizadas, por favor inicia sesión."
     
     try:
         prefs = UserPreference.objects.get(user=user)
@@ -102,9 +190,9 @@ def handle_recommendations(user):
             category__in=prefs.preferred_categories.all(),
             brand__in=prefs.preferred_brands.all(),
             price__range=(prefs.budget_range.get('min', 0), prefs.budget_range.get('max', 99999))
-        )[:5]  # Limitar a 5 recomendaciones
+        )[:5]
         
-        return "🎁 Recomendaciones personalizadas:\n" + "\n".join(
+        return "Recomendaciones personalizadas:\n" + "\n".join(
             f"- {p.name} (${p.price})" for p in products
         ) if products.exists() else "¿Qué tipo de productos te interesan hoy?"
     

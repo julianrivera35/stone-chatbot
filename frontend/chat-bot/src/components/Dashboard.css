@@ -1,0 +1,33 @@
+.dashboard {
+    padding: 20px;
+    text-align: center;
+  }
+  
+  .chart-container {
+    margin-bottom: 40px;
+    display: flex;
+    justify-content: center;
+  }
+  
+  .table-container {
+    margin-top: 40px;
+    display: flex;
+    justify-content: center;
+  }
+  
+  table {
+    width: 100%;
+    max-width: 800px;
+    border-collapse: collapse;
+    margin: auto;
+  }
+  
+  table, th, td {
+    border: 1px solid #ddd;
+    padding: 8px;
+  }
+  
+  th {
+    background-color: #f2f2f2;
+  }
+  

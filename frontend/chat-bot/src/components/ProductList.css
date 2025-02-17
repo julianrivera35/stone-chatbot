@@ -1,0 +1,33 @@
+.product-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    justify-content: center;
+  }
+  
+  .product-card {
+    width: calc(25% - 16px); /* 4 productos por fila */
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+    padding: 16px;
+    text-align: center;
+    background-color: #fff;
+  }
+  
+  .product-image {
+    width: 100%;
+    height: auto;
+    object-fit: cover;
+    border-radius: 8px;
+  }
+  
+  .price{
+    color: cornflowerblue;
+
+  }
+
+  h2{
+    justify-content: center;
+    text-align: center;
+    font-style: italic;
+  }

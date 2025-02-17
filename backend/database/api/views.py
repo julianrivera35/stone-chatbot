@@ -1,4 +1,5 @@
 from .permissions import IsAdminOrReadOnly, IsCustomerOwner, IsSellerOrAdmin
+from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework import viewsets
 from rest_framework.response import Response
 from rest_framework.decorators import api_view, permission_classes
@@ -6,7 +7,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework import status
 from django.contrib.auth.models import User
 from ..models import Product, UserPreference, Brand, Category, Customer, ChatSession, ChatMessage
-from .serializers import ProductSerializer, UserPreferenceSerializer, BrandSerializer, CategorySerializer, CustomerSerializer, ChatSessionSerializer, ChatMessageSerializer
+from .serializers import ProductSerializer, UserPreferenceSerializer, BrandSerializer, CategorySerializer, CustomerSerializer, ChatSessionSerializer, ChatMessageSerializer, CustomTokenObtainPairSerializer
 
 
 class BrandViewSet(viewsets.ModelViewSet):
@@ -43,6 +44,9 @@ class CustomerViewSet(viewsets.ModelViewSet):
     queryset = Customer.objects.all()
     serializer_class = CustomerSerializer
     permission_classes = [IsSellerOrAdmin]
+
+class CustomTokenObtainPairView(TokenObtainPairView):
+    serializer_class = CustomTokenObtainPairSerializer
     
 @api_view(['POST'])
 @permission_classes([AllowAny])

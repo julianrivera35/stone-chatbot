@@ -16,6 +16,10 @@ class AIModelManager:
         "consulta_inventario", 
         "caracteristicas_producto",
         "consulta_recomendaciones",
+        "consulta_categoria",
+        "consulta_marca",
+        "consulta_mixta",
+        "consulta_multiproducto",
         "saludo",
         "despedida"
     ]
